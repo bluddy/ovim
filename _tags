@@ -1,1 +1,3 @@
 <*>: package(batteries)
+
+true: bin_annot
