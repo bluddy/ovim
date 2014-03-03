@@ -1,1 +1,1 @@
-ocamlbuild -use-findlib ovim.byte
+ocamlbuild -use-ocamlfind ovim.byte
