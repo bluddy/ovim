@@ -50,6 +50,8 @@ let chunk_length = function
 type buffer = {
   file_name : string option;
   chunks : chunk list;
+  length : int;
+  num_lines : int;
 }
 
 let chunk_of_string s =
@@ -64,8 +66,11 @@ let chunk_of_string s =
   Content {data; new_lines}
 
 let buffer_of_file fname s = 
-  let chunks = [chunk_of_string s] in
-  {file_name=Some fname; chunks}
+  let chunk = chunk_of_string s in
+  let length = chunk_length chunk in
+  let num_lines = chunk_lines chunk in
+  let chunks = [chunk] in
+  {file_name=Some fname; chunks; length; num_lines}
 
 let load_buffer fname = 
   let s = File.with_file_in fname IO.read_all in
@@ -73,7 +78,7 @@ let load_buffer fname =
 
 let find_chunk buffer loc =
   foldl_until (fun count chunk ->
-    let c = chunk_chars chunk in
+    let c = chunk_length chunk in
     if c >= count then Left chunk
     else Right(count - c)
   ) loc buffer.chunks
@@ -99,14 +104,19 @@ let split_chunk loc = function
       let num_lines = count_lines c first last in
       let s2 = Sub {contents=c; num_lines; first; last} in
       s1, s2
+
+let add_to_buffer buffer cs chunks =
+  let length = buffer.length + chunk_length cs in
+  let num_lines = buffer.num_lines + chunk_lines cs in
+  {buffer with chunks; length; num_lines}
   
 let append_string buffer s =
   let cs = chunk_of_string s in
-  {buffer with chunks = buffer.chunks@[cs]}
+  add_to_buffer buffer cs @@ buffer.chunks@[cs]
 
 let prepend_string buffer s =
   let cs = chunk_of_string s in
-  {buffer with chunks = cs::buffer.chunks}
+  add_to_buffer buffer cs @@ cs::buffer.chunks
 
 let insert_string buffer s loc =
   let cs = chunk_of_string s in
@@ -121,6 +131,52 @@ let insert_string buffer s loc =
     | x::xs ->
         let x1, x2 = split_chunk rem x in
         (List.rev acc)@x1::cs::x2::xs
-  in loop loc [] buffer.chunks
+  in 
+  let chunks = loop loc [] buffer.chunks in
+  add_to_buffer buffer cs chunks
+
+(* TODO: keep track of lost newlines in delete *)
+
+(* delete characters up to a given point *)
+let rec del_to rem acc = function
+  | x::xs when rem >= chunk_length x
+          -> del_to (rem-chunk_length x) acc xs
+  | xs when rem <= 0
+          -> (List.rev acc)@xs
+  | x::xs ->
+      let _, s2 = split_chunk rem x in
+      (List.rev acc)@s2::xs
+  | []    -> failwith "Delete range out of bounds"
+
+(* delete from the start of the buffer to a given point *)
+let del_from_start buff loc num = del_to num [] buff.chunks
+
+(* delete from a given point *)
+let rec del_from del_fn rem num acc = function
+  | []    when rem <= 0 
+          -> del_fn num acc []
+  | []    -> failwith "Location out of bounds"
+  | xs    when rem <= 0 
+          -> del_fn num acc xs
+  | x::xs when rem >= chunk_length x 
+          -> del_from (rem-chunk_length x) (x::acc) xs
+  | x::xs when rem + num < chunk_length x
+          ->
+      let x1, _ = split_chunk rem x in
+      let _, x2 = split_chunk (rem + num) x in
+      (List.rev acc)@x1::x2::xs
+  | x::xs ->
+      let x1, _ = split_chunk rem x in
+      del_fn (num - (chunk_length x - rem)) (x1::acc) xs
+
+(* delete from a point in the buffer to the end *)
+let del_to_end buffer loc =
+  let del_fn _ acc _ = List.rev acc in
+  del_from del_fn loc max_int [] buffer.chunks
+
+(* delete a number of characters from a point in the buffer *)
+let del_slice buffer loc num = in del_from del_to loc [] buffer.chunks
+
+  
 
 
