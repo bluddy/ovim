@@ -77,11 +77,12 @@ let load_buffer fname =
   buffer_of_file fname s
 
 let find_chunk buffer loc =
-  foldl_until (fun count chunk ->
-    let c = chunk_length chunk in
-    if c >= count then Left chunk
-    else Right(count - c)
-  ) loc buffer.chunks
+  let rec loop count = function
+    | []    -> failwith "Out of bounds"
+    | x::xs when count < chunk_length x
+            -> x
+    | x::xs -> loop (count - chunk_length x) xs
+  in loop loc buffer.chunks
 
 let split_chunk loc = function
   | Sub s when sub_length s < loc
@@ -152,14 +153,15 @@ let rec del_to rem acc = function
 let del_from_start buff loc num = del_to num [] buff.chunks
 
 (* delete from a given point *)
-let rec del_from del_fn rem num acc = function
+let del_from del_fn loc num chunks = 
+  let rec loop rem acc = function
   | []    when rem <= 0 
           -> del_fn num acc []
   | []    -> failwith "Location out of bounds"
   | xs    when rem <= 0 
           -> del_fn num acc xs
   | x::xs when rem >= chunk_length x 
-          -> del_from (rem-chunk_length x) (x::acc) xs
+          -> loop (rem-chunk_length x) (x::acc) xs
   | x::xs when rem + num < chunk_length x
           ->
       let x1, _ = split_chunk rem x in
@@ -168,14 +170,15 @@ let rec del_from del_fn rem num acc = function
   | x::xs ->
       let x1, _ = split_chunk rem x in
       del_fn (num - (chunk_length x - rem)) (x1::acc) xs
+  in loop loc [] chunks
 
 (* delete from a point in the buffer to the end *)
 let del_to_end buffer loc =
   let del_fn _ acc _ = List.rev acc in
-  del_from del_fn loc max_int [] buffer.chunks
+  del_from del_fn loc max_int buffer.chunks
 
 (* delete a number of characters from a point in the buffer *)
-let del_slice buffer loc num = in del_from del_to loc [] buffer.chunks
+let del_slice buffer loc num = del_from del_to loc num buffer.chunks
 
   
 
